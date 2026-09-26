@@ -41,7 +41,30 @@ export default function IpLookup() {
   const [now, setNow] = useState("");
 
   useEffect(() => {
-    fetch("/api/ip", { cache: "no-store" }).then(r => r.json()).then(d => setIp(d.ip)).catch(() => setIp("Unavailable"));
+    async function loadPublicIp() {
+      try {
+        // In production behind Cloudflare/Nginx/Vercel, our own API can read
+        // the real client IP from trusted forwarding headers.
+        const localResponse = await fetch("/api/ip", { cache: "no-store" });
+        const localData = await localResponse.json();
+        if (localData.ip && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(localData.ip)) {
+          setIp(localData.ip);
+          return;
+        }
+
+        // During local development Next.js only sees a LAN/container address.
+        // A browser-side request is required so the lookup service sees the
+        // visitor's public Internet address rather than the Next.js server IP.
+        const publicResponse = await fetch("https://api.ipify.org?format=json", { cache: "no-store" });
+        if (!publicResponse.ok) throw new Error("Public IP lookup failed");
+        const publicData = await publicResponse.json();
+        setIp(publicData.ip || "Unavailable");
+      } catch {
+        setIp("Unavailable");
+      }
+    }
+
+    loadPublicIp();
     const ua = navigator.userAgent;
     setDevice({ browser: browserName(ua), os: osName(ua), resolution: `${window.screen.width} x ${window.screen.height}`, userAgent: ua });
     const update = () => setNow(new Intl.DateTimeFormat("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
@@ -52,9 +75,30 @@ export default function IpLookup() {
 
   async function copyIp() {
     if (!ip || ip === "Loading..." || ip === "Unavailable") return;
-    await navigator.clipboard.writeText(ip);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
+
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        await navigator.clipboard.writeText(ip);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = ip;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+        const ok = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        if (!ok) throw new Error("Copy command failed");
+      }
+
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
   }
 
   return (
@@ -70,7 +114,13 @@ export default function IpLookup() {
 
         <section className="ip-panel">
           <div className="ip-label"><strong>Your Current IP Address</strong><span>Địa chỉ IP hiện tại của bạn</span></div>
-          <div className="ip-line"><div className="ip-address">{ip}</div><button onClick={copyIp} className="copy" aria-label="Copy IP">{copied ? "✓" : "▣"}</button></div>
+          <div className="ip-line"><div className="ip-address">{ip}</div><button onClick={copyIp} className={copied ? "copy copied-state" : "copy"} aria-label={copied ? "IP copied" : "Copy IP"} title={copied ? "Copied" : "Copy IP"}>
+            {copied ? (
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" /></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>
+            )}
+          </button></div>
           <div className={copied ? "copied show" : "copied"}>Copied! <span>Đã sao chép!</span></div>
         </section>
 
