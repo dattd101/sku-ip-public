@@ -36,7 +36,8 @@ function Row({ icon, en, vi, value, mono = false }: { icon: React.ReactNode; en:
 
 export default function IpLookup() {
   const [ip, setIp] = useState("Loading...");
-  const [copied, setCopied] = useState(false);
+  const [ipv6, setIpv6] = useState("Loading...");
+  const [copied, setCopied] = useState<"ipv4" | "ipv6" | null>(null);
   const [device, setDevice] = useState<DeviceInfo>(initial);
   const [now, setNow] = useState("");
 
@@ -64,7 +65,21 @@ export default function IpLookup() {
       }
     }
 
+    async function loadPublicIpv6() {
+      try {
+        // api6.ipify.org is reachable only when the visitor has working IPv6.
+        // This keeps the IPv6 result independent from the IPv4 lookup above.
+        const response = await fetch("https://api6.ipify.org?format=json", { cache: "no-store" });
+        if (!response.ok) throw new Error("IPv6 lookup failed");
+        const data = await response.json();
+        setIpv6(typeof data.ip === "string" && data.ip.includes(":") ? data.ip : "Unavailable");
+      } catch {
+        setIpv6("Unavailable");
+      }
+    }
+
     loadPublicIp();
+    loadPublicIpv6();
     const ua = navigator.userAgent;
     setDevice({ browser: browserName(ua), os: osName(ua), resolution: `${window.screen.width} x ${window.screen.height}`, userAgent: ua });
     const update = () => setNow(new Intl.DateTimeFormat("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
@@ -73,15 +88,15 @@ export default function IpLookup() {
     return () => window.clearInterval(timer);
   }, []);
 
-  async function copyIp() {
-    if (!ip || ip === "Loading..." || ip === "Unavailable") return;
+  async function copyIp(value: string, family: "ipv4" | "ipv6") {
+    if (!value || value === "Loading..." || value === "Unavailable") return;
 
     try {
       if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-        await navigator.clipboard.writeText(ip);
+        await navigator.clipboard.writeText(value);
       } else {
         const textarea = document.createElement("textarea");
-        textarea.value = ip;
+        textarea.value = value;
         textarea.setAttribute("readonly", "");
         textarea.style.position = "fixed";
         textarea.style.opacity = "0";
@@ -94,10 +109,10 @@ export default function IpLookup() {
         if (!ok) throw new Error("Copy command failed");
       }
 
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      setCopied(family);
+      window.setTimeout(() => setCopied(null), 1600);
     } catch {
-      setCopied(false);
+      setCopied(null);
     }
   }
 
@@ -114,14 +129,31 @@ export default function IpLookup() {
 
         <section className="ip-panel">
           <div className="ip-label"><strong>Your Current IP Address</strong><span>Địa chỉ IP hiện tại của bạn</span></div>
-          <div className="ip-line"><div className="ip-address">{ip}</div><button onClick={copyIp} className={copied ? "copy copied-state" : "copy"} aria-label={copied ? "IP copied" : "Copy IP"} title={copied ? "Copied" : "Copy IP"}>
-            {copied ? (
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" /></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>
-            )}
-          </button></div>
-          <div className={copied ? "copied show" : "copied"}>Copied! <span>Đã sao chép!</span></div>
+          <div className="ip-stack">
+            <div className="ip-entry">
+              <span className="ip-family">IPv4</span>
+              <div className="ip-line"><div className="ip-address">{ip}</div><button onClick={() => copyIp(ip, "ipv4")} className={copied === "ipv4" ? "copy copied-state" : "copy"} aria-label={copied === "ipv4" ? "IPv4 copied" : "Copy IPv4"} title={copied === "ipv4" ? "Copied" : "Copy IPv4"}>
+                {copied === "ipv4" ? (
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" /></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>
+                )}
+              </button></div>
+              <div className={copied === "ipv4" ? "copied show" : "copied"}>Copied! <span>Đã sao chép!</span></div>
+            </div>
+
+            <div className="ip-entry ipv6-entry">
+              <span className="ip-family">IPv6</span>
+              <div className="ip-line"><div className="ip-address ipv6-address">{ipv6}</div><button onClick={() => copyIp(ipv6, "ipv6")} className={copied === "ipv6" ? "copy copied-state" : "copy"} aria-label={copied === "ipv6" ? "IPv6 copied" : "Copy IPv6"} title={copied === "ipv6" ? "Copied" : "Copy IPv6"}>
+                {copied === "ipv6" ? (
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" /></svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>
+                )}
+              </button></div>
+              <div className={copied === "ipv6" ? "copied show" : "copied"}>Copied! <span>Đã sao chép!</span></div>
+            </div>
+          </div>
         </section>
 
         <section className="details">
